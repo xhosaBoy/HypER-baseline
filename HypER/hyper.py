@@ -138,7 +138,7 @@ class Experiment:
             sort_values, sort_idxs = torch.sort(predictions, dim=1, descending=True)
 
             for j in range(triples.shape[0]):
-                rank = np.where(sort_idxs[j] == e2_idx[j])[0][0]
+                rank = np.where(sort_idxs[j].cpu() == e2_idx[j].cpu())[0][0]
                 ranks.append(rank + 1)
 
                 for hits_level in range(10):
@@ -224,12 +224,11 @@ class Experiment:
 
             model.eval()
             with torch.no_grad():
-                # self.evaluate(model, d.train_data)
+                self.evaluate(model, d.train_data)
                 logger.info(f'Starting Validation ...')
                 self.evaluate(model, d.valid_data)
-                if epoch % 10 == 0:
-                    logger.info(f'Starting Test ...')
-                    self.evaluate(model, d.test_data, testing=True)
+                logger.info(f'Starting Test ...')
+                self.evaluate(model, d.test_data, testing=True)
 
 
 if __name__ == '__main__':
@@ -267,7 +266,7 @@ if __name__ == '__main__':
                             decay_rate=0.99,
                             ent_vec_dim=200,
                             rel_vec_dim=200,
-                            cuda=False,
+                            cuda=True,
                             input_dropout=0.2,
                             hidden_dropout=0.3,
                             feature_map_dropout=0.2,
