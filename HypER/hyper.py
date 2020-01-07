@@ -1,19 +1,27 @@
 # std
-import time
-from collections import defaultdict
+import os
+import sys
 import argparse
-import pickle
+import logging
+from collections import defaultdict
 
 # 3rd party
 import numpy as np
 import torch
-from torch.nn import functional as F, Parameter
-from torch.nn.init import xavier_normal_, xavier_uniform_
 from torch.optim.lr_scheduler import ExponentialLR
 
 # internal
 from load_data import Data
 from models import *
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+formatter = logging.Formatter('%(asctime)s:%(name)s:%(levelname)s:%(message)s')
+
+stream_handler = logging.StreamHandler(sys.stdout)
+stream_handler.setLevel(logging.INFO)
+stream_handler.setFormatter(formatter)
+logger.addHandler(stream_handler)
 
     
 class Experiment:
@@ -23,7 +31,7 @@ class Experiment:
                  learning_rate=0.001,
                  ent_vec_dim=200,
                  rel_vec_dim=200,
-                 num_iterations=100,
+                 epochs=100,
                  batch_size=128,
                  decay_rate=0.,
                  cuda=False,
@@ -40,7 +48,7 @@ class Experiment:
         self.learning_rate = learning_rate
         self.ent_vec_dim = ent_vec_dim
         self.rel_vec_dim = rel_vec_dim
-        self.num_iterations = num_iterations
+        self.epochs = epochs
         self.batch_size = batch_size
         self.decay_rate = decay_rate
         self.label_smoothing = label_smoothing
@@ -59,8 +67,9 @@ class Experiment:
                       self.entity_idxs[data[i][2]]) for i in range(len(data))]
 
         return data_idxs
-    
-    def get_er_vocab(self, data):
+
+    @staticmethod
+    def get_er_vocab(data):
         er_vocab = defaultdict(list)
 
         for triple in data:
@@ -68,13 +77,12 @@ class Experiment:
 
         return er_vocab
 
-    def get_batch(self, er_vocab, er_vocab_pairs, idx):
-        batch = er_vocab_pairs[idx:min(idx+self.batch_size, len(er_vocab_pairs))]
+    def get_batch(self, er_vocab, er_vocab_pairs, er_vocab_pairs_size, idx):
+        batch = er_vocab_pairs[idx:min(idx + self.batch_size, er_vocab_pairs_size)]
         targets = np.zeros((len(batch), len(d.entities)))
 
         for idx, pair in enumerate(batch):
             targets[idx, er_vocab[pair]] = 1.
-
         targets = torch.FloatTensor(targets)
 
         if self.cuda:
@@ -89,16 +97,17 @@ class Experiment:
         for i in range(10):
             hits.append([])
 
-        test_data_idxs = self.get_data_idxs(data)
+        evaluate_data_idxs = self.get_data_idxs(data)
         er_vocab = self.get_er_vocab(self.get_data_idxs(d.data))
 
-        print("Number of data points: %d" % len(test_data_idxs))
+        evaluation_data_size = len(evaluate_data_idxs)
+        logger.info(f'Number of data points: {evaluation_data_size}')
         
-        for i in range(0, len(test_data_idxs), self.batch_size):
-            data_batch, _ = self.get_batch(er_vocab, test_data_idxs, i)
-            e1_idx = torch.tensor(data_batch[:,0])
-            r_idx = torch.tensor(data_batch[:,1])
-            e2_idx = torch.tensor(data_batch[:,2])
+        for i in range(0, evaluation_data_size, self.batch_size):
+            data_batch, _ = self.get_batch(er_vocab, evaluate_data_idxs, evaluation_data_size, i)
+            e1_idx = torch.tensor(data_batch[:, 0])
+            r_idx = torch.tensor(data_batch[:, 1])
+            e2_idx = torch.tensor(data_batch[:, 2])
 
             if self.cuda:
                 e1_idx = e1_idx.cuda()
@@ -125,18 +134,18 @@ class Experiment:
                     else:
                         hits[hits_level].append(0.0)
 
-        print('Hits @10: {0}'.format(np.mean(hits[9])))
-        print('Hits @3: {0}'.format(np.mean(hits[2])))
-        print('Hits @1: {0}'.format(np.mean(hits[0])))
-        print('Mean rank: {0}'.format(np.mean(ranks)))
-        print('Mean reciprocal rank: {0}'.format(np.mean(1./np.array(ranks))))
+        logger.info(f'Hits @10: {np.mean(hits[9])}')
+        logger.info(f'Hits @3: {np.mean(hits[2])}')
+        logger.info(f'Hits @1: {np.mean(hits[0])}')
+        logger.info(f'Mean rank: {np.mean(ranks)}')
+        logger.info(f'Mean reciprocal rank: {np.mean(1./np.array(ranks))}')
 
     def train_and_eval(self):
-        print("Training the %s model..." % model_name)
-        self.entity_idxs = {d.entities[i]:i for i in range(len(d.entities))}
-        self.relation_idxs = {d.relations[i]:i for i in range(len(d.relations))}
+        logger.info(f'Training the {model_name} model ...')
+        self.entity_idxs = {d.entities[i]: i for i in range(len(d.entities))}
+        self.relation_idxs = {d.relations[i]: i for i in range(len(d.relations))}
         train_data_idxs = self.get_data_idxs(d.train_data)
-        print("Number of training data points: %d" % len(train_data_idxs))
+        logger.info(f'Number of training triples: {len(train_data_idxs)}')
 
         if model_name.lower() == "hype":
             model = HypE(d, self.ent_vec_dim, self.rel_vec_dim, **self.kwargs)
@@ -148,28 +157,33 @@ class Experiment:
             model = ConvE(d, self.ent_vec_dim, self.rel_vec_dim, **self.kwargs)
         elif model_name.lower() == "complex":
             model = ComplEx(d, self.ent_vec_dim, self.rel_vec_dim, **self.kwargs)
-        print([value.numel() for value in model.parameters()])
+        logger.debug('model parameters: {}'.format({name: value.numel() for name, value in model.named_parameters()}))
 
         if self.cuda:
             model.cuda()
+
         model.init()
         opt = torch.optim.Adam(model.parameters(), lr=self.learning_rate)
+
         if self.decay_rate:
             scheduler = ExponentialLR(opt, self.decay_rate)
 
         er_vocab = self.get_er_vocab(train_data_idxs)
         er_vocab_pairs = list(er_vocab.keys())
-        print(len(er_vocab_pairs))
+        er_vocab_pairs_size = len(er_vocab_pairs)
+        logger.info(f'Number of entity-relational pairs: {er_vocab_pairs_size}')
 
-        print("Starting training...")
+        logger.info('Starting Training ...')
 
-        for it in range(1, self.num_iterations + 1):
+        for epoch in range(1, self.epochs + 1):
+            logger.info(f'Epoch: {epoch}')
+
             model.train()    
-            losses = []
+            costs = []
             np.random.shuffle(er_vocab_pairs)
 
-            for j in range(0, len(er_vocab_pairs), self.batch_size):
-                data_batch, targets = self.get_batch(er_vocab, er_vocab_pairs, j)
+            for j in range(0, er_vocab_pairs_size, self.batch_size):
+                data_batch, targets = self.get_batch(er_vocab, er_vocab_pairs, er_vocab_pairs_size, j)
                 opt.zero_grad()
                 e1_idx = torch.tensor(data_batch[:, 0])
                 r_idx = torch.tensor(data_batch[:, 1])
@@ -181,26 +195,25 @@ class Experiment:
                 predictions = model.forward(e1_idx, r_idx)
 
                 if self.label_smoothing:
-                    targets = ((1.0-self.label_smoothing)*targets) + (1.0/targets.size(1))
+                    targets = ((1.0 - self.label_smoothing) * targets) + (1.0 / targets.size(1))
 
-                loss = model.loss(predictions, targets)
-                loss.backward()
+                cost = model.loss(predictions, targets)
+                cost.backward()
                 opt.step()
 
             if self.decay_rate:
                 scheduler.step()
-            losses.append(loss.item())
+            costs.append(cost.item())
 
-            print(it)    
-            print(np.mean(losses))
+            logger.info(f'Mean training cost: {np.mean(costs)}')
 
             model.eval()
             with torch.no_grad():
-                print("Validation:")
+                # self.evaluate(model, d.train_data)
+                logger.info(f'Starting Validation ...')
                 self.evaluate(model, d.valid_data)
-                if not it % 2:
-                    print("Test:")
-                    self.evaluate(model, d.test_data)
+                logger.info(f'Starting Test ...')
+                self.evaluate(model, d.test_data)
 
 
 if __name__ == '__main__':
@@ -212,7 +225,7 @@ if __name__ == '__main__':
                         help='Which algorithm to use: HypER, ConvE, DistMult, or ComplEx')
     parser.add_argument('--dataset',
                         type=str,
-                        default="FB15k-237",
+                        default="WN18",
                         nargs="?",
                         help='Which dataset to use: FB15k, FB15k-237, WN18 or WN18RR')
 
@@ -220,7 +233,8 @@ if __name__ == '__main__':
     model_name = args.algorithm
     dataset = args.dataset
 
-    data_dir = "data/%s/" % dataset
+    data_dir = os.path.join('data', dataset)
+    logger.debug(f'data_dir: {data_dir}')
     d = Data(data_dir=data_dir, reverse=True)
 
     torch.backends.cudnn.deterministic = True
@@ -231,7 +245,7 @@ if __name__ == '__main__':
         torch.cuda.manual_seed_all(seed)
 
     experiment = Experiment(model_name,
-                            num_iterations=800,
+                            epochs=800,
                             batch_size=128,
                             learning_rate=0.001,
                             decay_rate=0.99,
