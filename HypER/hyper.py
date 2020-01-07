@@ -23,6 +23,11 @@ stream_handler.setLevel(logging.INFO)
 stream_handler.setFormatter(formatter)
 logger.addHandler(stream_handler)
 
+file_handler = logging.FileHandler('hntn_train_validate_and_test_wordnet_baseline.log')
+file_handler.setLevel(logging.INFO)
+file_handler.setFormatter(formatter)
+logger.addHandler(file_handler)
+
     
 class Experiment:
 
@@ -92,7 +97,11 @@ class Experiment:
 
         return np.array(batch), targets
 
-    def evaluate(self, model, data, testing=False):
+    def evaluate(self, model, data, epoch, data_type=None):
+        data_type_map = {'training': 'TRAINING', 'validation': 'VALIDATION', 'testing': 'TESTING'}
+        data_type = data_type_map[data_type] if data_type else 'TRAINING'
+        logger.info(f'Starting {data_type} evaluation {epoch}')
+
         hits = []
         ranks = []
         costs = []
@@ -104,7 +113,7 @@ class Experiment:
         evaluation_triple_size = len(evaluate_triple_idxs)
         logger.info(f'Number of evaluation data points: {evaluation_triple_size}')
 
-        er_vocab = self.get_er_vocab(self.get_data_idxs(d.data)) if testing else \
+        er_vocab = self.get_er_vocab(self.get_data_idxs(d.data)) if data_type == 'TESTING' else \
             self.get_er_vocab(self.get_data_idxs(d.data_train_and_valid))
 
         for i in range(0, evaluation_triple_size, self.batch_size):
@@ -147,13 +156,13 @@ class Experiment:
                     else:
                         hits[hits_level].append(0.0)
 
-        logger.info(f'Mean evaluation cost: {np.mean(costs)}')
+        logger.info(f'Epoch: {epoch}, Mean evaluation cost_{data_type.lower()}: {np.mean(costs)}')
 
-        logger.info(f'Hits @10: {np.mean(hits[9])}')
-        logger.info(f'Hits @3: {np.mean(hits[2])}')
-        logger.info(f'Hits @1: {np.mean(hits[0])}')
-        logger.info(f'Mean rank: {np.mean(ranks)}')
-        logger.info(f'Mean reciprocal rank: {np.mean(1. / np.array(ranks))}')
+        logger.info(f'Epoch: {epoch}, Hits @10_{data_type.lower()}: {np.mean(hits[9])}')
+        logger.info(f'Epoch: {epoch}, Hits @3_{data_type.lower()}: {np.mean(hits[2])}')
+        logger.info(f'Epoch: {epoch}, Hits @1_{data_type.lower()}: {np.mean(hits[0])}')
+        logger.info(f'Epoch: {epoch}, Mean rank_{data_type.lower()}: {np.mean(ranks)}')
+        logger.info(f'Epoch: {epoch}, Mean reciprocal rank_{data_type.lower()}: {np.mean(1. / np.array(ranks))}')
 
     def train_and_eval(self):
         logger.info(f'Training the {model_name} model ...')
@@ -224,11 +233,13 @@ class Experiment:
 
             model.eval()
             with torch.no_grad():
-                self.evaluate(model, d.train_data)
+                train_data = np.array(d.train_data)
+                train_data = train_data[np.random.choice(train_data.shape[0], 10000, replace=False), :]
+                self.evaluate(model, train_data, epoch, 'training')
                 logger.info(f'Starting Validation ...')
-                self.evaluate(model, d.valid_data)
+                self.evaluate(model, d.valid_data, epoch, 'validation')
                 logger.info(f'Starting Test ...')
-                self.evaluate(model, d.test_data, testing=True)
+                self.evaluate(model, d.test_data, epoch, 'testing')
 
 
 if __name__ == '__main__':
