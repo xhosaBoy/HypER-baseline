@@ -77,11 +77,13 @@ class Experiment:
 
         return er_vocab
 
-    def get_batch(self, er_vocab, er_vocab_pairs, er_vocab_pairs_size, idx):
-        batch = er_vocab_pairs[idx:min(idx + self.batch_size, er_vocab_pairs_size)]
+    def get_batch(self, er_vocab, triple_idxs, triple_size, idx):
+        batch = triple_idxs[idx:min(idx + self.batch_size, triple_size)]
+        er_vocab_pairs = [(triple[0], triple[1]) for triple in batch]
+
         targets = np.zeros((len(batch), len(d.entities)))
 
-        for idx, pair in enumerate(batch):
+        for idx, pair in enumerate(er_vocab_pairs):
             targets[idx, er_vocab[pair]] = 1.
         targets = torch.FloatTensor(targets)
 
@@ -90,24 +92,29 @@ class Experiment:
 
         return np.array(batch), targets
 
-    def evaluate(self, model, data):
+    def evaluate(self, model, data, testing=False):
         hits = []
         ranks = []
+        costs = []
 
         for i in range(10):
             hits.append([])
 
-        evaluate_data_idxs = self.get_data_idxs(data)
-        er_vocab = self.get_er_vocab(self.get_data_idxs(d.data))
+        evaluate_triple_idxs = self.get_data_idxs(data)
+        evaluation_triple_size = len(evaluate_triple_idxs)
+        logger.info(f'Number of evaluation data points: {evaluation_triple_size}')
 
-        evaluation_data_size = len(evaluate_data_idxs)
-        logger.info(f'Number of data points: {evaluation_data_size}')
-        
-        for i in range(0, evaluation_data_size, self.batch_size):
-            data_batch, _ = self.get_batch(er_vocab, evaluate_data_idxs, evaluation_data_size, i)
-            e1_idx = torch.tensor(data_batch[:, 0])
-            r_idx = torch.tensor(data_batch[:, 1])
-            e2_idx = torch.tensor(data_batch[:, 2])
+        er_vocab = self.get_er_vocab(self.get_data_idxs(d.data)) if testing else \
+            self.get_er_vocab(self.get_data_idxs(d.data_train_and_valid))
+
+        for i in range(0, evaluation_triple_size, self.batch_size):
+            if i % (128 * 100) == 0:
+                logger.info(f'Batch: {i + 1} ...')
+
+            triples, targets = self.get_batch(er_vocab, evaluate_triple_idxs, evaluation_triple_size, i)
+            e1_idx = torch.tensor(triples[:, 0])
+            r_idx = torch.tensor(triples[:, 1])
+            e2_idx = torch.tensor(triples[:, 2])
 
             if self.cuda:
                 e1_idx = e1_idx.cuda()
@@ -116,15 +123,21 @@ class Experiment:
 
             predictions = model.forward(e1_idx, r_idx)
 
-            for j in range(data_batch.shape[0]):
-                filt = er_vocab[(data_batch[j][0], data_batch[j][1])]
-                target_value = predictions[j,e2_idx[j]].item()
+            if self.label_smoothing:
+                targets = ((1.0 - self.label_smoothing) * targets) + (1.0 / targets.size(1))
+
+            cost = model.loss(predictions, targets)
+            costs.append(cost.item())
+
+            for j in range(triples.shape[0]):
+                filt = er_vocab[(triples[j][0], triples[j][1])]
+                target_value = predictions[j, e2_idx[j]].item()
                 predictions[j, filt] = 0.0
                 predictions[j, e2_idx[j]] = target_value
 
             sort_values, sort_idxs = torch.sort(predictions, dim=1, descending=True)
 
-            for j in range(data_batch.shape[0]):
+            for j in range(triples.shape[0]):
                 rank = np.where(sort_idxs[j] == e2_idx[j])[0][0]
                 ranks.append(rank + 1)
 
@@ -134,18 +147,21 @@ class Experiment:
                     else:
                         hits[hits_level].append(0.0)
 
+        logger.info(f'Mean evaluation cost: {np.mean(costs)}')
+
         logger.info(f'Hits @10: {np.mean(hits[9])}')
         logger.info(f'Hits @3: {np.mean(hits[2])}')
         logger.info(f'Hits @1: {np.mean(hits[0])}')
         logger.info(f'Mean rank: {np.mean(ranks)}')
-        logger.info(f'Mean reciprocal rank: {np.mean(1./np.array(ranks))}')
+        logger.info(f'Mean reciprocal rank: {np.mean(1. / np.array(ranks))}')
 
     def train_and_eval(self):
         logger.info(f'Training the {model_name} model ...')
         self.entity_idxs = {d.entities[i]: i for i in range(len(d.entities))}
         self.relation_idxs = {d.relations[i]: i for i in range(len(d.relations))}
-        train_data_idxs = self.get_data_idxs(d.train_data)
-        logger.info(f'Number of training triples: {len(train_data_idxs)}')
+        train_triple_idxs = self.get_data_idxs(d.train_data)
+        train_triple_size = len(train_triple_idxs)
+        logger.info(f'Number of training data points: {train_triple_size}')
 
         if model_name.lower() == "hype":
             model = HypE(d, self.ent_vec_dim, self.rel_vec_dim, **self.kwargs)
@@ -168,11 +184,7 @@ class Experiment:
         if self.decay_rate:
             scheduler = ExponentialLR(opt, self.decay_rate)
 
-        er_vocab = self.get_er_vocab(train_data_idxs)
-        er_vocab_pairs = list(er_vocab.keys())
-        er_vocab_pairs_size = len(er_vocab_pairs)
-        logger.info(f'Number of entity-relational pairs: {er_vocab_pairs_size}')
-
+        er_vocab = self.get_er_vocab(train_triple_idxs)
         logger.info('Starting Training ...')
 
         for epoch in range(1, self.epochs + 1):
@@ -180,13 +192,16 @@ class Experiment:
 
             model.train()    
             costs = []
-            np.random.shuffle(er_vocab_pairs)
+            np.random.shuffle(train_triple_idxs)
 
-            for j in range(0, er_vocab_pairs_size, self.batch_size):
-                data_batch, targets = self.get_batch(er_vocab, er_vocab_pairs, er_vocab_pairs_size, j)
+            for j in range(0, train_triple_size, self.batch_size):
+                if j % (128 * 100) == 0:
+                    logger.info(f'Batch: {j + 1} ...')
+
+                triples, targets = self.get_batch(er_vocab, train_triple_idxs, train_triple_size, j)
                 opt.zero_grad()
-                e1_idx = torch.tensor(data_batch[:, 0])
-                r_idx = torch.tensor(data_batch[:, 1])
+                e1_idx = torch.tensor(triples[:, 0])
+                r_idx = torch.tensor(triples[:, 1])
 
                 if self.cuda:
                     e1_idx = e1_idx.cuda()
@@ -198,12 +213,12 @@ class Experiment:
                     targets = ((1.0 - self.label_smoothing) * targets) + (1.0 / targets.size(1))
 
                 cost = model.loss(predictions, targets)
+                costs.append(cost.item())
                 cost.backward()
                 opt.step()
 
             if self.decay_rate:
                 scheduler.step()
-            costs.append(cost.item())
 
             logger.info(f'Mean training cost: {np.mean(costs)}')
 
@@ -212,8 +227,9 @@ class Experiment:
                 # self.evaluate(model, d.train_data)
                 logger.info(f'Starting Validation ...')
                 self.evaluate(model, d.valid_data)
-                logger.info(f'Starting Test ...')
-                self.evaluate(model, d.test_data)
+                if epoch % 10 == 0:
+                    logger.info(f'Starting Test ...')
+                    self.evaluate(model, d.test_data, testing=True)
 
 
 if __name__ == '__main__':

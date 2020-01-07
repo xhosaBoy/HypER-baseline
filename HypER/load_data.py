@@ -7,6 +7,7 @@ class Data:
         self.valid_data = self.load_data(data_dir, "valid", reverse=reverse)
         self.test_data = self.load_data(data_dir, "test", reverse=reverse)
         self.data = self.train_data + self.valid_data + self.test_data
+        self.data_train_and_valid = self.train_data + self.valid_data
         self.entities = self.get_entities(self.data)
         self.train_relations = self.get_relations(self.train_data)
         self.valid_relations = self.get_relations(self.valid_data)
