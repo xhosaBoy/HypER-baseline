@@ -264,7 +264,7 @@ class Experiment:
             model.eval()
             with torch.no_grad():
                 train_data = np.array(d.train_data)
-                train_data = train_data[np.random.choice(train_data.shape[0], 10000, replace=False), :]
+                train_data = train_data[np.random.choice(train_data.shape[0], 118142, replace=False), :]
                 self.evaluate(model, train_data, epoch, 'training')
                 logger.info(f'Starting Validation ...')
                 self.evaluate(model, d.valid_data, epoch, 'validation')
