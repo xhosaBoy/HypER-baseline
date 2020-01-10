@@ -261,15 +261,16 @@ class Experiment:
 
             logger.info(f'Mean training cost: {np.mean(costs)}')
 
-            model.eval()
-            with torch.no_grad():
-                train_data = np.array(d.train_data)
-                train_data = train_data[np.random.choice(train_data.shape[0], 118142, replace=False), :]
-                self.evaluate(model, train_data, epoch, 'training')
-                logger.info(f'Starting Validation ...')
-                self.evaluate(model, d.valid_data, epoch, 'validation')
-                logger.info(f'Starting Test ...')
-                self.evaluate(model, d.test_data, epoch, 'testing')
+            if epoch % 2 == 0:
+                model.eval()
+                with torch.no_grad():
+                    train_data = np.array(d.train_data)
+                    train_data = train_data[np.random.choice(train_data.shape[0], 118142, replace=False), :]
+                    self.evaluate(model, train_data, epoch, 'training')
+                    logger.info(f'Starting Validation ...')
+                    self.evaluate(model, d.valid_data, epoch, 'validation')
+                    logger.info(f'Starting Test ...')
+                    self.evaluate(model, d.test_data, epoch, 'testing')
 
 
 if __name__ == '__main__':
