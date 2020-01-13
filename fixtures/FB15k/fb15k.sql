@@ -1,12 +1,13 @@
-DROP TABLE if EXISTS entity;
+DROP TABLE if EXISTS entity_freebase;
 DROP TABLE if EXISTS relation;
 DROP TABLE if EXISTS train;
 DROP TABLE if EXISTS valid;
 DROP TABLE if EXISTS test;
 
-CREATE TABLE entity(
+CREATE TABLE entity_freebase(
    synset_id text PRIMARY KEY NOT NULL,
-   name text UNIQUE
+   name text,
+   UNIQUE (synset_id, name)
 );
 
 CREATE TABLE relation(
