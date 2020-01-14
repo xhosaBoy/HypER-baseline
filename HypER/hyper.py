@@ -265,7 +265,11 @@ class Experiment:
                 model.eval()
                 with torch.no_grad():
                     train_data = np.array(d.train_data)
-                    train_data = train_data[np.random.choice(train_data.shape[0], 118142, replace=False), :]
+                    train_data_map = {'WN18': 10000, 'FB15k': 100000, 'WN18RR': 6068, 'FB15k-237': 35070}
+                    train_data_sample_size = train_data_map[dataset]
+                    train_data = train_data[np.random.choice(train_data.shape[0],
+                                                             train_data_sample_size,
+                                                             replace=False), :]
                     self.evaluate(model, train_data, epoch, 'training')
                     logger.info(f'Starting Validation ...')
                     self.evaluate(model, d.valid_data, epoch, 'validation')
@@ -274,6 +278,7 @@ class Experiment:
 
 
 if __name__ == '__main__':
+    logger.info('START!')
     parser = argparse.ArgumentParser()
     parser.add_argument('--algorithm',
                         type=str,
@@ -318,3 +323,4 @@ if __name__ == '__main__':
                             filt_w=9,
                             label_smoothing=0.1)
     experiment.train_and_eval()
+    logger.info('DONE!')
