@@ -1,4 +1,16 @@
 import os
+import sys
+import logging
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+formatter = logging.Formatter('%(asctime)s:%(name)s:%(levelname)s:%(message)s')
+
+stream_handler = logging.StreamHandler(sys.stdout)
+stream_handler.setLevel(logging.INFO)
+stream_handler.setFormatter(formatter)
+logger.addHandler(stream_handler)
+
 
 class Data:
 
@@ -18,8 +30,11 @@ class Data:
 
     @staticmethod
     def load_data(dirname, data_type="train", reverse=False):
+        root, _ = os.path.split(os.path.dirname(__file__))
+        logger.debug(f'root: {root}')
         filename = f'{data_type}.txt'
-        path = os.path.join(dirname, filename)
+        path = os.path.join(root, dirname, filename)
+        logger.debug(f'path: {path}')
 
         with open(path, 'r') as f:
             data = f.read().strip().split('\n')
