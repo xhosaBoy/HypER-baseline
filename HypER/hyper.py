@@ -23,7 +23,7 @@ stream_handler.setLevel(logging.INFO)
 stream_handler.setFormatter(formatter)
 logger.addHandler(stream_handler)
 
-file_handler = logging.FileHandler('hntn_train_validate_and_test_fb15k_200d_baseline.log')
+file_handler = logging.FileHandler('hntn_train_validate_and_test_fb15k_237_200d_baseline.log')
 file_handler.setLevel(logging.INFO)
 file_handler.setFormatter(formatter)
 logger.addHandler(file_handler)
@@ -287,7 +287,7 @@ if __name__ == '__main__':
                         help='Which algorithm to use: HypER, ConvE, DistMult, or ComplEx')
     parser.add_argument('--dataset',
                         type=str,
-                        default="FB15k",
+                        default="FB15k-237",
                         nargs="?",
                         help='Which dataset to use: FB15k, FB15k-237, WN18 or WN18RR')
 
