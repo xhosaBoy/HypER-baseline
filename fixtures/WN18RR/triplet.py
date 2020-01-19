@@ -1,6 +1,7 @@
 # std
 import os
 import sys
+import copy
 import logging
 
 # 3rd party
@@ -26,7 +27,7 @@ def get_path(dirname, filename=None):
         Returns:
             filepath (str): Full file file path.
         """
-    fixtures, _ = os.path.split(os.path.dirname(__file__))
+    fixtures, _ =  os.path.split(os.path.dirname(__file__))
     project = os.path.dirname(fixtures)
     path = os.path.join(project, dirname, filename) if filename else os.path.join(project, dirname)
 
@@ -66,42 +67,45 @@ def insert_record(record, tablename, cursor, connection):
     try:
         cursor.execute(insert_statement, (AsIs(tablename), AsIs(','.join(columns)), tuple(values)))
     except Exception as e:
-        logger.debug(f'Could not insert into {tablename}, {e}')
+        logger.error(f'Could not insert into {tablename}, {e}')
 
     connection.commit()
     count = cursor.rowcount
     logger.debug(f'{count} Record inserted successfully into {tablename} table')
 
 
-def insert_records(entityfile, tablename, connection):
+def insert_records(records, tablename, connection):
 
-    with open(entityfile, 'r', encoding='utf-8') as entityfile:
+    with connection as con:
+        cursor = con.cursor()
 
-        with connection as con:
-            cursor = con.cursor()
+        for record in records:
+            insert_record(record, tablename, cursor, con)
 
-            for index, line in enumerate(entityfile):
-                record = {}
-                entity = line.strip().split('\t')
-                if len(entity) > 1:
-                    synset_id, intelligible_name = entity
-                    logger.debug(f'synset_id: {synset_id}, intelligible_name: {intelligible_name}')
-                else:
-                    entity.append('')
-                    synset_id, intelligible_name = entity
-                    logger.debug(f'synset_id: {synset_id}, intelligible_name: {intelligible_name}')
 
-                name = intelligible_name
-                logger.debug(f'name: {name}')
+def get_records(tripletfile):
 
-                record['synset_id'] = synset_id
-                record['name'] = name
-                logger.debug(f'record: {record}')
+    with open(tripletfile, 'r') as factfile:
+        records = []
+        record = {}
 
-                insert_record(record, tablename, cursor, con)
+        for line in factfile:
+            subject, predicate, obj = line.strip().split('\t')
+            logger.debug(f'subject: {subject}, predicate: {predicate}, object: {obj}')
 
-                if index % 100000 == 0:
-                    logger.info(f'{index + 1} lines processed')
+            predicate = predicate.replace('_', ' ').strip()
+            logger.debug(f'predicate: {predicate}')
+
+            record['subject'] = subject
+            record['predicate'] = predicate
+            record['object'] = obj
+
+            logger.debug(f'record: {record}')
+            records.append(copy.copy(record))
+
+        logger.info(f'number of records: {len(records)}')
+
+    return records
 
 
 def main():
@@ -110,16 +114,32 @@ def main():
                                 '*********',
                                 '127.0.0.1',
                                 '5432',
-                                'tensor_factorisation_fb15k')
+                                'tensor_factorisation_wn18rr')
     logger.info('Successfully conntect to database!')
 
-    tablename = 'entity_freebase'
-    entityfile = get_path('data/FB15k', 'mid2name.tsv')
-    logger.debug(f'entityfile: {entityfile}')
+    tripletfile = get_path('data/WN18RR')
+    logger.debug(f'tripletfile: {tripletfile}')
 
-    logger.info('Inserting records...')
-    insert_records(entityfile, tablename, connection)
-    logger.info('Successfully inserted records!')
+    dirname, = list(os.walk(tripletfile))
+    _, _, filenames = dirname
+    experiment = ['train.txt', 'valid.txt', 'test.txt']
+
+    for filename in filenames:
+        if filename in experiment:
+            tablename, _ = filename.split('.')
+            logger.debug(f'tablename: {tablename}')
+            filename = get_path('data/WN18RR', filename)
+
+            logger.info('Getting records...')
+            records = get_records(filename)
+            number_of_records = len(records)
+            logger.debug(f'training records: {records}')
+            logger.debug(f'number of training records: {number_of_records}')
+            logger.info('Completed getting records!')
+
+            logger.info('Inserting records...')
+            insert_records(records, tablename, connection)
+            logger.info('Completed inserting records!')
 
 
 if __name__ == '__main__':
