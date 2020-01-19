@@ -12,7 +12,7 @@ from torch.optim.lr_scheduler import ExponentialLR
 
 # internal
 from load_data import Data
-from models import *
+from models import HypE, HypER, DistMult, ConvE, ComplEx
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
