@@ -113,10 +113,10 @@ def main():
                                 '*********',
                                 '127.0.0.1',
                                 '5432',
-                                'tensor_factorisation_fb15k')
+                                'tensor_factorisation_fb15k_237')
     logger.info('Successfully conntect to database!')
 
-    tripletfile = get_path('data/FB15k')
+    tripletfile = get_path('data/FB15k-237')
     logger.debug(f'tripletfile: {tripletfile}')
 
     dirname, = list(os.walk(tripletfile))
@@ -127,7 +127,7 @@ def main():
         if filename in experiment:
             tablename, _ = filename.split('.')
             logger.debug(f'tablename: {tablename}')
-            filename = get_path('data/FB15k', filename)
+            filename = get_path('data/FB15k-237', filename)
 
             logger.info('Getting records...')
             records = get_records(filename)
