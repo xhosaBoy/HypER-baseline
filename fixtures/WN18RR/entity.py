@@ -118,19 +118,28 @@ def get_records(entityfile):
 
 
 def main():
+    logger.info('Connecting to database...')
     connection = get_connection('scientist',
                                 '*********',
                                 '127.0.0.1',
                                 '5432',
                                 'tensor_factorisation_wn18rr')
+    logger.info('Successfully conntect to database!')
 
     tablename = 'entity'
-
     entityfile = get_path('data/WN18RR', 'wordnet-mlj12-definitions.txt')
     logger.debug(f'entityfile: {entityfile}')
+
+    logger.info('Getting records...')
     records = get_records(entityfile)
+    logger.info('Successfully got records!')
+
+    logger.info('Inserting records...')
     insert_records(records, tablename, connection)
+    logger.info('Completed inserting records!')
 
 
 if __name__ == '__main__':
+    logger.info('Starting ETL...')
     main()
+    logger.info('DONE!')
