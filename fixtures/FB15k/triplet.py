@@ -8,7 +8,6 @@ import psycopg2
 from psycopg2.extras import Json
 from psycopg2.extensions import AsIs
 
-
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 formatter = logging.Formatter('%(asctime)s:%(name)s:%(levelname)s:%(message)s')
@@ -138,7 +137,7 @@ def main():
 
             logger.info('Inserting records...')
             insert_records(records, tablename, connection)
-            logger.info('Completed getting records!')
+            logger.info('Completed insterting records!')
 
 
 if __name__ == '__main__':

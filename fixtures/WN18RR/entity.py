@@ -1,6 +1,8 @@
 # std
 import os
 import sys
+import re
+import copy
 import logging
 
 # 3rd party
@@ -66,63 +68,69 @@ def insert_record(record, tablename, cursor, connection):
     try:
         cursor.execute(insert_statement, (AsIs(tablename), AsIs(','.join(columns)), tuple(values)))
     except Exception as e:
-        logger.debug(f'Could not insert into {tablename}, {e}')
+        logger.error(f'Could not insert into {tablename}, {e}')
 
     connection.commit()
     count = cursor.rowcount
     logger.debug(f'{count} Record inserted successfully into {tablename} table')
 
 
-def insert_records(entityfile, tablename, connection):
+def insert_records(records, tablename, connection):
+    with connection as con:
+        cursor = con.cursor()
 
-    with open(entityfile, 'r', encoding='utf-8') as entityfile:
+        for record in records:
+            insert_record(record, tablename, cursor, con)
 
-        with connection as con:
-            cursor = con.cursor()
 
-            for index, line in enumerate(entityfile):
-                record = {}
-                entity = line.strip().split('\t')
-                if len(entity) > 1:
-                    synset_id, intelligible_name = entity
-                    logger.debug(f'synset_id: {synset_id}, intelligible_name: {intelligible_name}')
-                else:
-                    entity.append('')
-                    synset_id, intelligible_name = entity
-                    logger.debug(f'synset_id: {synset_id}, intelligible_name: {intelligible_name}')
+def get_records(entityfile):
 
-                name = intelligible_name
-                logger.debug(f'name: {name}')
+    with open(entityfile, 'r') as entityfile:
+        records = []
+        record = {}
 
-                record['synset_id'] = synset_id
-                record['name'] = name
-                logger.debug(f'record: {record}')
+        for line in entityfile:
+            synset_id, intelligible_name, definition = line.strip().split('\t')
+            logger.debug(f'synset_id: {synset_id}, intelligible_name: {intelligible_name}, defintion: {definition}')
 
-                insert_record(record, tablename, cursor, con)
+            pattern = re.compile(r'^__([a-zA-Z0-9\'\._/-]*)_([A-Z]{2})_([0-9])')
+            name = pattern.search(intelligible_name).group(1).replace('_', ' ')
+            logger.debug(f'name: {name}')
+            POS_tag = pattern.search(intelligible_name).group(2)
+            logger.debug(f'POS_tag: {POS_tag}')
+            sense_index = pattern.search(intelligible_name).group(3)
+            logger.debug(f'sense_index: {sense_index}')
 
-                if index % 100000 == 0:
-                    logger.info(f'{index + 1} lines processed')
+            definition = definition.replace('_', ' ')
+
+            record['synset_id'] = synset_id
+            record['name'] = name
+            record['POS_tag'] = POS_tag
+            record['sense_index'] = int(sense_index)
+            record['definition'] = definition
+
+            logger.debug(f'record: {record}')
+            records.append(copy.copy(record))
+
+        logger.info(f'number of records: {len(records)}')
+
+    return records
 
 
 def main():
-    logger.info('Connecting to database...')
     connection = get_connection('scientist',
                                 '*********',
                                 '127.0.0.1',
                                 '5432',
-                                'tensor_factorisation_fb15k')
-    logger.info('Successfully conntect to database!')
+                                'tensor_factorisation_wn18rr')
 
-    tablename = 'entity_freebase'
-    entityfile = get_path('data/FB15k', 'mid2name.tsv')
+    tablename = 'entity'
+
+    entityfile = get_path('data/WN18RR', 'wordnet-mlj12-definitions.txt')
     logger.debug(f'entityfile: {entityfile}')
-
-    logger.info('Inserting records...')
-    insert_records(entityfile, tablename, connection)
-    logger.info('Successfully inserted records!')
+    records = get_records(entityfile)
+    insert_records(records, tablename, connection)
 
 
 if __name__ == '__main__':
-    logger.info('Starting ETL...')
     main()
-    logger.info('DONE!')
