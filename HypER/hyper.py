@@ -287,7 +287,7 @@ if __name__ == '__main__':
                         help='Which algorithm to use: HypER, ConvE, DistMult, or ComplEx')
     parser.add_argument('--dataset',
                         type=str,
-                        default="FB15k-237",
+                        default="WN18RR",
                         nargs="?",
                         help='Which dataset to use: FB15k, FB15k-237, WN18 or WN18RR')
 
