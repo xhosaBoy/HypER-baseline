@@ -26,7 +26,7 @@ def get_path(dirname, filename=None):
         Returns:
             filepath (str): Full file file path.
         """
-    fixtures, _ =  os.path.split(os.path.dirname(__file__))
+    fixtures, _ = os.path.split(os.path.dirname(__file__))
     project = os.path.dirname(fixtures)
     path = os.path.join(project, dirname, filename) if filename else os.path.join(project, dirname)
 
@@ -66,45 +66,42 @@ def insert_record(record, tablename, cursor, connection):
     try:
         cursor.execute(insert_statement, (AsIs(tablename), AsIs(','.join(columns)), tuple(values)))
     except Exception as e:
-        logger.error(f'Could not insert into {tablename}, {e}')
+        logger.debug(f'Could not insert into {tablename}, {e}')
 
     connection.commit()
     count = cursor.rowcount
     logger.debug(f'{count} Record inserted successfully into {tablename} table')
 
 
-def insert_records(records, tablename, connection):
+def insert_records(entityfile, tablename, connection):
 
-    with connection as con:
-        cursor = con.cursor()
+    with open(entityfile, 'r', encoding='utf-8') as entityfile:
 
-        for record in records:
-            insert_record(record, tablename, cursor, con)
+        with connection as con:
+            cursor = con.cursor()
 
+            for index, line in enumerate(entityfile):
+                record = {}
+                entity = line.strip().split('\t')
+                if len(entity) > 1:
+                    synset_id, intelligible_name = entity
+                    logger.debug(f'synset_id: {synset_id}, intelligible_name: {intelligible_name}')
+                else:
+                    entity.append('')
+                    synset_id, intelligible_name = entity
+                    logger.debug(f'synset_id: {synset_id}, intelligible_name: {intelligible_name}')
 
-def get_records(tripletfile):
+                name = intelligible_name
+                logger.debug(f'name: {name}')
 
-    with open(tripletfile, 'r') as factfile:
-        records = []
+                record['synset_id'] = synset_id
+                record['name'] = name
+                logger.debug(f'record: {record}')
 
-        for line in factfile:
-            record = {}
-            subject, predicate, obj = line.strip().split('\t')
-            logger.debug(f'subject: {subject}, predicate: {predicate}, object: {obj}')
+                insert_record(record, tablename, cursor, con)
 
-            predicate = predicate.replace('_', ' ').strip()
-            logger.debug(f'predicate: {predicate}')
-
-            record['subject'] = subject
-            record['predicate'] = predicate
-            record['object'] = obj
-
-            logger.debug(f'record: {record}')
-            records.append(record)
-
-        logger.info(f'number of records: {len(records)}')
-
-    return records
+                if index % 100000 == 0:
+                    logger.info(f'{index + 1} lines processed')
 
 
 def main():
@@ -113,31 +110,16 @@ def main():
                                 '*********',
                                 '127.0.0.1',
                                 '5432',
-                                'tensor_factorisation_fb15k')
+                                'tensor_factorisation_fb15k_237')
     logger.info('Successfully conntect to database!')
 
-    tripletfile = get_path('data/FB15k')
-    logger.debug(f'tripletfile: {tripletfile}')
+    tablename = 'entity_freebase'
+    entityfile = get_path('data/FB15k-237', 'mid2name.tsv')
+    logger.debug(f'entityfile: {entityfile}')
 
-    dirname, = list(os.walk(tripletfile))
-    _, _, filenames = dirname
-    experiment = ['train.txt', 'valid.txt', 'test.txt']
-
-    for filename in filenames:
-        if filename in experiment:
-            tablename, _ = filename.split('.')
-            logger.debug(f'tablename: {tablename}')
-            filename = get_path('data/FB15k', filename)
-
-            logger.info('Getting records...')
-            records = get_records(filename)
-            logger.debug(f'training records: {records}')
-            logger.debug(f'number of training records: {len(records)}')
-            logger.info('Completed getting records!')
-
-            logger.info('Inserting records...')
-            insert_records(records, tablename, connection)
-            logger.info('Completed inserting records!')
+    logger.info('Inserting records...')
+    insert_records(entityfile, tablename, connection)
+    logger.info('Successfully inserted records!')
 
 
 if __name__ == '__main__':

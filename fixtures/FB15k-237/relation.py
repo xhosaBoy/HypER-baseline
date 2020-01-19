@@ -74,7 +74,6 @@ def insert_record(record, tablename, cursor, connection):
 
 
 def insert_records(records, tablename, connection):
-
     with connection as con:
         cursor = con.cursor()
 
@@ -82,23 +81,17 @@ def insert_records(records, tablename, connection):
             insert_record(record, tablename, cursor, con)
 
 
-def get_records(tripletfile):
+def get_records(relationfile):
 
-    with open(tripletfile, 'r') as factfile:
+    with open(relationfile, 'r') as relationfile:
         records = []
 
-        for line in factfile:
+        for line in relationfile:
             record = {}
-            subject, predicate, obj = line.strip().split('\t')
-            logger.debug(f'subject: {subject}, predicate: {predicate}, object: {obj}')
+            _, relation, _ = line.strip().split('\t')
+            logger.debug(f'relation: {relation}')
 
-            predicate = predicate.replace('_', ' ').strip()
-            logger.debug(f'predicate: {predicate}')
-
-            record['subject'] = subject
-            record['predicate'] = predicate
-            record['object'] = obj
-
+            record['name'] = relation
             logger.debug(f'record: {record}')
             records.append(record)
 
@@ -113,31 +106,40 @@ def main():
                                 '*********',
                                 '127.0.0.1',
                                 '5432',
-                                'tensor_factorisation_fb15k')
+                                'tensor_factorisation_fb15k_237')
     logger.info('Successfully conntect to database!')
 
-    tripletfile = get_path('data/FB15k')
-    logger.debug(f'tripletfile: {tripletfile}')
+    tablename = 'relation'
+    relationfile = get_path('data/FB15k-237')
+    logger.debug(f'relationfile: {relationfile}')
 
-    dirname, = list(os.walk(tripletfile))
+    logger.info('Getting records...')
+    dirname, = list(os.walk(relationfile))
     _, _, filenames = dirname
     experiment = ['train.txt', 'valid.txt', 'test.txt']
 
+    records = []
+
     for filename in filenames:
         if filename in experiment:
-            tablename, _ = filename.split('.')
-            logger.debug(f'tablename: {tablename}')
-            filename = get_path('data/FB15k', filename)
+            filename = get_path('data/FB15k-237', filename)
+            logger.debug(f'filename: {filename}')
 
-            logger.info('Getting records...')
-            records = get_records(filename)
-            logger.debug(f'training records: {records}')
-            logger.debug(f'number of training records: {len(records)}')
-            logger.info('Completed getting records!')
+            logger.info('Extending records...')
+            records_new = [{'name': value} for value in set([relation['name'] for relation in get_records(filename)])]
+            logger.debug(f'records_train: {records_new}')
+            logger.debug(f'number of relations so far: {len(records_new)}')
+            records.extend(records_new)
+            logger.info('Completed extending records!')
 
-            logger.info('Inserting records...')
-            insert_records(records, tablename, connection)
-            logger.info('Completed inserting records!')
+    logger.info('Successfully got records!')
+
+    records = [{'name': value} for value in set([relation['name'] for relation in records])]
+    logger.info(f'final number of relations: {len(records)}')
+
+    logger.info('Inserting records...')
+    insert_records(records, tablename, connection)
+    logger.info('Completed getting records!')
 
 
 if __name__ == '__main__':
