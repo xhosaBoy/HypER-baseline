@@ -23,7 +23,7 @@ stream_handler.setLevel(logging.INFO)
 stream_handler.setFormatter(formatter)
 logger.addHandler(stream_handler)
 
-file_handler = logging.FileHandler('hntn_train_validate_and_test_fb15k_237_200d_baseline.log')
+file_handler = logging.FileHandler('hntn_train_validate_and_test_wn18rr_200d_baseline.log')
 file_handler.setLevel(logging.INFO)
 file_handler.setFormatter(formatter)
 logger.addHandler(file_handler)
