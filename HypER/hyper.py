@@ -320,7 +320,7 @@ if __name__ == '__main__':
         torch.cuda.manual_seed_all(seed)
 
     experiment = Experiment(model_name,
-                            epochs=800,
+                            epochs=500,
                             batch_size=128,
                             learning_rate=0.001,
                             decay_rate=0.99,
